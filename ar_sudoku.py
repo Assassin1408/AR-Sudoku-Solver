@@ -24,7 +24,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from digit_model import DEFAULT_WEIGHTS, ROOT, load_model, pick_device  # noqa: E402
-from grid_detector import CELL, SIDE, find_grid, rectify, read_board  # noqa: E402
+from grid_detector import CELL, SIDE, find_grid, rectify, read_board, warp_matrices  # noqa: E402
 from solver import is_valid_givens, solve  # noqa: E402
 
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff")
@@ -217,25 +217,60 @@ def draw_solution(frame, Minv, givens, solution, color=(40, 200, 40)):
 
 class ARSudoku:
     """Per frame: detect grid, read digits, vote across frames, solve once per
-    distinct board, and overlay the cached solution."""
+    distinct board, and overlay the solution.
 
-    def __init__(self, model, device="cpu", vote_frames=6, lost_reset=15):
+    A solved board is locked: later frames only have to stay consistent with
+    it, so motion blur, a missed detection or a single misread digit no longer
+    makes the overlay disappear. The lock is dropped only when the board
+    clearly changes or the grid stays lost."""
+
+    BLUR_MIN = 60.0        # Laplacian variance of the rectified board below this = too blurry to read
+    MISMATCH_OK = 4        # cells that may disagree with the lock before we doubt it
+    MISMATCH_DROP = 10     # cells that must disagree (several frames running) to drop it
+    DROP_FRAMES = 8
+
+    def __init__(self, model, device="cpu", vote_frames=10, lost_reset=45):
         self.model, self.device = model, device
         self.votes = deque(maxlen=vote_frames)
         self.lost, self.lost_reset = 0, lost_reset
         self.corners = None
         self.cache = {}
+        self.locked = None      # (givens, solution)
+        self.mismatch_run = 0
         self.status = "searching"
 
     def reset(self):
         self.votes.clear()
         self.corners = None
+        self.locked = None
+        self.mismatch_run = 0
 
     def _smooth(self, q):
-        if self.corners is not None and np.abs(q - self.corners).mean() < 6:
-            q = 0.6 * self.corners + 0.4 * q   # damp jitter when nearly still
+        if self.corners is not None:
+            d = np.abs(q - self.corners).mean()
+            if d < 25:   # same grid: blend harder the stiller it is
+                a = 0.25 if d < 4 else 0.5
+                q = (1 - a) * self.corners + a * q
         self.corners = q
         return q
+
+    def _overlay(self, frame, q):
+        out = frame.copy()
+        cv2.polylines(out, [q.astype(np.int32)], True, (255, 160, 0), 2)
+        if self.locked is None:
+            return out
+        _, Minv = warp_matrices(q)
+        return draw_solution(out, Minv, *self.locked)
+
+    def _vote(self):
+        stack = np.stack([v[0] for v in self.votes])
+        probs = np.mean([v[2] for v in self.votes], axis=0)
+        conf = np.mean([v[1] for v in self.votes], axis=0)
+        voted = np.zeros((9, 9), int)
+        for r in range(9):
+            for c in range(9):
+                voted[r, c] = np.bincount(stack[:, r, c], minlength=10).argmax()
+        return voted, conf, probs
 
     def process(self, frame):
         q = find_grid(frame)
@@ -243,35 +278,54 @@ class ARSudoku:
             self.lost += 1
             if self.lost > self.lost_reset:
                 self.reset()
+            elif self.locked is not None and self.corners is not None:
+                self.status = "holding solution (grid briefly lost)"
+                return self._overlay(frame, self.corners)
             self.status = "searching for grid"
             return frame
         self.lost = 0
         q = self._smooth(q)
         board, M, Minv = rectify(frame, q)
+
+        # Motion blur wrecks digit reading; keep showing what we have
+        if cv2.Laplacian(board, cv2.CV_64F).var() < self.BLUR_MIN:
+            if self.locked is not None:
+                self.status = "solved (holding, image blurry)"
+            else:
+                self.status = "image blurry, hold steady"
+            return self._overlay(frame, q)
+
         digits, conf, probs = read_board(self.model, board, self.device)
         self.votes.append((digits, conf, probs))
+        voted, mconf, mprobs = self._vote()
 
-        # Per cell majority vote over recent frames
-        stack = np.stack([v[0] for v in self.votes])
-        voted = np.zeros((9, 9), int)
-        for r in range(9):
-            for c in range(9):
-                voted[r, c] = np.bincount(stack[:, r, c], minlength=10).argmax()
-        mconf = np.mean([v[1] for v in self.votes], axis=0)
-        mprobs = np.mean([v[2] for v in self.votes], axis=0)
+        if self.locked is not None:
+            givens = self.locked[0]
+            bad = int((voted != givens).sum())
+            if bad >= self.MISMATCH_DROP:
+                self.mismatch_run += 1
+                if self.mismatch_run >= self.DROP_FRAMES:
+                    self.locked, self.mismatch_run = None, 0
+                    self.votes.clear()
+                    self.votes.append((digits, conf, probs))
+                    voted, mconf, mprobs = self._vote()
+            elif bad <= self.MISMATCH_OK:
+                self.mismatch_run = 0
+            if self.locked is not None:
+                self.status = f"solved ({int((givens > 0).sum())} clues)"
+                return self._overlay(frame, q)
 
         key = voted.tobytes()
         if key not in self.cache:
             self.cache[key] = solve_with_repair(voted, mconf, mprobs)
         sol, used = self.cache[key]
-
-        out = frame.copy()
-        cv2.polylines(out, [q.astype(np.int32)], True, (255, 160, 0), 2)
         if sol is None:
             self.status = f"read {int((voted > 0).sum())} clues, no valid solution yet"
-            return out
+            return self._overlay(frame, q)
+        self.locked = (used, sol)
+        self.mismatch_run = 0
         self.status = f"solved ({int((used > 0).sum())} clues)"
-        return draw_solution(out, Minv, used, sol)
+        return self._overlay(frame, q)
 
 
 def make_writer(path, fps, size):
