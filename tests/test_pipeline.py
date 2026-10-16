@@ -1,6 +1,7 @@
 """End to end evaluation on synthetic camera shots.
 
     python tests/test_pipeline.py --n 200
+    python tests/test_pipeline.py --n 50 --save-examples   # images in output/examples
 
 Reports grid detection rate, cell level accuracy (empty vs digit and digit
 class), fully correct board reads, and correct solutions (after repair)."""
@@ -13,7 +14,7 @@ import numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tests"))
-from ar_sudoku import draw_solution, solve_with_repair, write_image  # noqa: E402
+from ar_sudoku import OUTPUT_DIR, draw_solution, solve_with_repair, write_image  # noqa: E402
 from digit_model import DEFAULT_WEIGHTS, load_model  # noqa: E402
 from grid_detector import find_grid, read_board, rectify  # noqa: E402
 from synth import camera_shot, random_puzzle, render_board  # noqa: E402
@@ -24,10 +25,13 @@ def main():
     ap.add_argument("--n", type=int, default=200)
     ap.add_argument("--weights", default=DEFAULT_WEIGHTS)
     ap.add_argument("--font", default=None, choices=[None, "hershey", "ttf"])
-    ap.add_argument("--save-examples", default=None)
+    ap.add_argument("--save-examples", nargs="?", const=os.path.join(OUTPUT_DIR, "examples"),
+                    default=None, help="save the first 6 solved photos (default output/examples)")
     ap.add_argument("--seed", type=int, default=123)
     args = ap.parse_args()
 
+    if args.save_examples and not os.path.isabs(args.save_examples):
+        args.save_examples = os.path.join(OUTPUT_DIR, args.save_examples)
     model = load_model(args.weights)
     rng = np.random.default_rng(args.seed)
     found = cells = cell_ok = digit_cells = digit_ok = empty_ok = empty_cells = 0

@@ -93,7 +93,7 @@ def display():
     from ar_sudoku import has_display
     if not has_display():
         raise RuntimeError("no display found (SSH or server); "
-                           "run ar_sudoku.py with --no-show --save out.mp4")
+                           "run ar_sudoku.py with --no-show --save (saves to output/)")
     try:
         cv2.namedWindow("check", cv2.WINDOW_NORMAL)
         cv2.imshow("check", np.zeros((10, 10, 3), np.uint8))
@@ -101,7 +101,7 @@ def display():
         cv2.destroyAllWindows()
     except cv2.error:
         raise RuntimeError("no window support (headless machine or opencv-python-headless); "
-                           "run ar_sudoku.py with --no-show --save out.mp4")
+                           "run ar_sudoku.py with --no-show --save (saves to output/)")
     return "windows can be opened"
 
 

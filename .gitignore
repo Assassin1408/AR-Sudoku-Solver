@@ -1,9 +1,15 @@
+# Everything the app saves (results, snapshots, demo videos, test examples)
+output/
+
+# Python
 __pycache__/
 *.pyc
 .venv/
 venv/
+
+# MNIST download (python download_mnist.py)
 data/
-*.mp4
-*.avi
-snapshot_*.png
+
+# OS files
 .DS_Store
+Thumbs.db

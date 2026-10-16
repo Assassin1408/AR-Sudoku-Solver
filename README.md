@@ -46,14 +46,33 @@ For a much smaller CPU build, install torch first:
 ```bash
 python ar_sudoku.py                                    # webcam 0
 python ar_sudoku.py --source 1                         # another camera
-python ar_sudoku.py --source puzzle.jpg --save solved.jpg
-python ar_sudoku.py --source clip.mp4 --save solved.mp4
-python ar_sudoku.py --no-show --save out.mp4           # no window (SSH, server, Docker)
+python ar_sudoku.py --save                             # record the webcam session
+python ar_sudoku.py --source puzzle.jpg --save         # output/solved_<date>_<time>.jpg
+python ar_sudoku.py --source clip.mp4 --save my_run    # output/my_run.mp4
+python ar_sudoku.py --no-show --save                   # no window (SSH, server, Docker)
 python ar_sudoku.py --device cuda                      # auto, cpu, cuda or mps
 ```
 
 Keys in the window: `q` or `Esc` quit, `r` reset the reading (after switching
 puzzles), `s` save a snapshot. Closing the window also quits.
+
+### Where files are saved
+
+Everything the project saves goes into the `output/` folder, which is
+created automatically and listed in `.gitignore`, so results never end up in
+git:
+
+```
+output/
+├── solved_20261016_153226.jpg   # --save with no name: timestamped, never overwritten
+├── my_run.mp4                   # --save my_run
+├── snapshots/                   # s key during a live session
+├── demo.mp4, demo_frame.jpg     # tests/make_demo_video.py
+└── examples/                    # tests/test_pipeline.py --save-examples
+```
+
+A name passed to `--save` is placed inside `output/` (subfolders such as
+`--save runs/a.mp4` work too). An absolute path is used exactly as given.
 
 Hold the puzzle so it fills about half the frame. A blue outline shows when
 the grid is found, and the solution appears in green after about 6 frames.
@@ -132,8 +151,9 @@ the printed digit mix in is used for the included weights.
 ## Tests
 
 ```bash
-python tests/test_pipeline.py --n 200           # accuracy on synthetic camera photos
-python tests/make_demo_video.py --out demo.mp4  # simulated handheld camera video
+python tests/test_pipeline.py --n 200                    # accuracy on synthetic camera photos
+python tests/test_pipeline.py --n 50 --save-examples     # also saves 6 images to output/examples
+python tests/make_demo_video.py                          # simulated handheld video, output/demo.mp4
 ```
 
 ## Troubleshooting
@@ -144,7 +164,7 @@ python tests/make_demo_video.py --out demo.mp4  # simulated handheld camera vide
 | Windows: camera fails or opens slowly | Close other apps using it (Teams, Zoom); check Settings > Privacy & security > Camera |
 | Linux: "Cannot open camera" | `sudo usermod -aG video $USER`, then log out and in |
 | Wrong camera opens (e.g. iPhone Continuity Camera) | `--source 1` |
-| "No display found" | Expected over SSH or on servers; use `--no-show --save out.mp4` |
+| "No display found" | Expected over SSH or on servers; use `--no-show --save` and open the video in `output/` |
 | Linux: `libGL.so.1` missing | `sudo apt install libgl1`, or use `opencv-python-headless` with `--no-show` |
 | MNIST download SSL error on macOS | `pip install certifi` (in requirements), or run "Install Certificates.command" in your Python folder |
 | Saved as `.avi` instead of `.mp4` | Your OpenCV build lacks the mp4 encoder; the `.avi` plays everywhere |

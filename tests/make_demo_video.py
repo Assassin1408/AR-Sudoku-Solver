@@ -1,7 +1,7 @@
 """Simulate a handheld camera moving over a printed sudoku, run the live AR
 pipeline frame by frame, and save the result.
 
-    python tests/make_demo_video.py --out demo.mp4 --frames 120"""
+    python tests/make_demo_video.py                 # saves output/demo.mp4"""
 import argparse
 import os
 import sys
@@ -13,19 +13,20 @@ import numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tests"))
-from ar_sudoku import ARSudoku, make_writer, write_image  # noqa: E402
+from ar_sudoku import ARSudoku, make_writer, output_path, write_image  # noqa: E402
 from digit_model import DEFAULT_WEIGHTS, load_model  # noqa: E402
 from synth import random_puzzle, render_board  # noqa: E402
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="demo.mp4")
+    ap.add_argument("--out", default="demo.mp4", help="file name inside output/ (or an absolute path)")
     ap.add_argument("--frames", type=int, default=120)
     ap.add_argument("--weights", default=DEFAULT_WEIGHTS)
     ap.add_argument("--seed", type=int, default=7)
     args = ap.parse_args()
 
+    args.out = output_path(args.out, ".mp4")
     rng = np.random.default_rng(args.seed)
     puzzle, sol = random_puzzle(rng, clues=27)
     board = cv2.cvtColor(render_board(puzzle, rng, font_kind="ttf"), cv2.COLOR_GRAY2BGR)
@@ -67,6 +68,7 @@ def main():
     ms = 1000 * np.array(times)
     print(f"per frame: median {np.median(ms):.1f} ms, p95 {np.percentile(ms, 95):.1f} ms "
           f"(~{1000 / np.median(ms):.0f} fps on this CPU); final status: {app.status}")
+    print("saved", args.out)
 
 
 if __name__ == "__main__":

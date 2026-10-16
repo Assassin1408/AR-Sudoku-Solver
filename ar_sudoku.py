@@ -2,9 +2,13 @@
 
     python ar_sudoku.py                    # webcam 0
     python ar_sudoku.py --source 1         # another camera
-    python ar_sudoku.py --source clip.mp4 --save out.mp4
-    python ar_sudoku.py --source photo.jpg --save solved.jpg
-    python ar_sudoku.py --no-show --save out.mp4   # machines without a display
+    python ar_sudoku.py --source clip.mp4 --save           # output/solved_<time>.mp4
+    python ar_sudoku.py --source photo.jpg --save solved.jpg  # output/solved.jpg
+    python ar_sudoku.py --no-show --save               # machines without a display
+
+Everything is saved inside the project's output/ folder (git ignored):
+results from --save, and snapshots in output/snapshots/. An absolute --save
+path is used as given.
 
 Keys: q or Esc quit, r reset the current reading, s save a snapshot.
 Works on Windows, macOS and Linux."""
@@ -19,11 +23,33 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from digit_model import DEFAULT_WEIGHTS, load_model, pick_device  # noqa: E402
+from digit_model import DEFAULT_WEIGHTS, ROOT, load_model, pick_device  # noqa: E402
 from grid_detector import CELL, SIDE, find_grid, rectify, read_board  # noqa: E402
 from solver import is_valid_givens, solve  # noqa: E402
 
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff")
+OUTPUT_DIR = os.path.join(ROOT, "output")
+
+
+def output_path(name=None, default_ext=".png", prefix="solved", subdir=""):
+    """Resolve where a result is saved. Relative names go inside output/
+    (or output/<subdir>/), absolute paths are kept, and no name gives a
+    timestamped one that never overwrites an earlier file. The parent folder
+    is created when missing."""
+    auto = not name
+    if auto:
+        name = f"{prefix}_{time.strftime('%Y%m%d_%H%M%S')}{default_ext}"
+    elif not os.path.splitext(name)[1]:
+        name += default_ext
+    path = name if os.path.isabs(name) else os.path.join(OUTPUT_DIR, subdir, name)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if auto:
+        stem, ext = os.path.splitext(path)
+        i = 1
+        while os.path.exists(path):
+            path = f"{stem}_{i}{ext}"
+            i += 1
+    return path
 
 
 # ---------------------------------------------------------------- file I/O
@@ -38,11 +64,14 @@ def read_image(path):
 
 
 def write_image(path, img):
-    ext = os.path.splitext(path)[1] or ".png"
-    ok, buf = cv2.imencode(ext, img)
+    if not os.path.splitext(path)[1]:
+        path += ".png"
+    ok, buf = cv2.imencode(os.path.splitext(path)[1], img)
     if not ok:
-        raise SystemExit(f"Could not encode image as {ext}: {path}")
-    buf.tofile(path if os.path.splitext(path)[1] else path + ext)
+        raise SystemExit(f"Could not encode image: {path}")
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    buf.tofile(path)
+    return path
 
 
 # ------------------------------------------------------------------ camera
@@ -113,7 +142,7 @@ class Display:
         if enabled and not has_display():
             self.enabled = False
             print("No display found, continuing without a window. "
-                  "Use --save to record the output.", flush=True)
+                  "Use --save to record it in output/.", flush=True)
 
     def show(self, img):
         if not self.enabled:
@@ -123,7 +152,7 @@ class Display:
         except cv2.error:
             self.enabled = False
             print("No display available, continuing without a window. "
-                  "Use --save to record the output.", flush=True)
+                  "Use --save to record it in output/.", flush=True)
 
     def key(self, wait_ms=1):
         if not self.enabled:
@@ -249,6 +278,7 @@ def make_writer(path, fps, size):
     """mp4v is available in almost every OpenCV build; if not, fall back to
     MJPG in an .avi container, which every build can write."""
     fps = fps if fps and 1 <= fps <= 240 else 30
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     w = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"mp4v"), fps, size)
     if w.isOpened():
         return w, path
@@ -266,7 +296,9 @@ def main():
                     help="camera index (0, 1, ...), video file, stream URL or image path")
     ap.add_argument("--weights", default=DEFAULT_WEIGHTS)
     ap.add_argument("--device", default="auto", help="auto, cpu, cuda or mps")
-    ap.add_argument("--save", default=None, help="output video or image path")
+    ap.add_argument("--save", nargs="?", const="", default=None, metavar="NAME",
+                    help="save the result in output/ (a name is optional; "
+                         "without one a timestamped name is used)")
     ap.add_argument("--no-show", action="store_true", help="do not open a window")
     args = ap.parse_args()
 
@@ -275,12 +307,15 @@ def main():
     app = ARSudoku(model, device)
     display = Display(not args.no_show)
 
-    if os.path.splitext(args.source)[1].lower() in IMAGE_EXTS:
+    is_image = os.path.splitext(args.source)[1].lower() in IMAGE_EXTS
+    if args.save is not None:
+        args.save = output_path(args.save, ".jpg" if is_image else ".mp4")
+
+    if is_image:
         out = app.process(read_image(args.source))
         print(app.status)
         if args.save:
-            write_image(args.save, out)
-            print("saved", args.save)
+            print("saved", write_image(args.save, out))
         display.show(out)
         if display.enabled:
             while display.key(50) not in (ord("q"), 27):  # q or Esc
@@ -327,9 +362,8 @@ def main():
             if k == ord("r"):
                 app.reset()
             if k == ord("s"):
-                name = f"snapshot_{int(now)}.png"
-                write_image(name, out)
-                print("saved", name, flush=True)
+                path = output_path(prefix="snapshot", subdir="snapshots")
+                print("saved", write_image(path, out), flush=True)
     except KeyboardInterrupt:
         pass
     finally:
