@@ -224,7 +224,7 @@ class ARSudoku:
     makes the overlay disappear. The lock is dropped only when the board
     clearly changes or the grid stays lost."""
 
-    BLUR_MIN = 60.0        # Laplacian variance of the rectified board below this = too blurry to read
+    BLUR_REL = 0.5         # skip frames sharper-than-this fraction of the recent median
     MISMATCH_OK = 4        # cells that may disagree with the lock before we doubt it
     MISMATCH_DROP = 10     # cells that must disagree (several frames running) to drop it
     DROP_FRAMES = 8
@@ -237,6 +237,7 @@ class ARSudoku:
         self.cache = {}
         self.locked = None      # (givens, solution)
         self.mismatch_run = 0
+        self.sharp = deque(maxlen=30)
         self.status = "searching"
 
     def reset(self):
@@ -287,12 +288,15 @@ class ARSudoku:
         q = self._smooth(q)
         board, M, Minv = rectify(frame, q)
 
-        # Motion blur wrecks digit reading; keep showing what we have
-        if cv2.Laplacian(board, cv2.CV_64F).var() < self.BLUR_MIN:
-            if self.locked is not None:
-                self.status = "solved (holding, image blurry)"
-            else:
-                self.status = "image blurry, hold steady"
+        # Motion blur wrecks digit reading. Sharpness is judged against recent
+        # frames (webcam sharpness varies a lot), and only once we have
+        # something to fall back on, so the first reads are never blocked.
+        sharp = cv2.Laplacian(board, cv2.CV_64F).var()
+        typical = np.median(self.sharp) if len(self.sharp) >= 5 else None
+        self.sharp.append(sharp)
+        if typical is not None and sharp < self.BLUR_REL * typical and (self.locked is not None or self.votes):
+            self.status = ("solved (holding, image blurry)" if self.locked is not None
+                           else "image blurry, hold steady")
             return self._overlay(frame, q)
 
         digits, conf, probs = read_board(self.model, board, self.device)
