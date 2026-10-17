@@ -2,12 +2,14 @@
 
     python tests/test_pipeline.py --n 200
     python tests/test_pipeline.py --n 50 --save-examples   # images in output/examples
+    python tests/test_pipeline.py --n 200 --save           # also writes tests/results/accuracy.txt
 
 Reports grid detection rate, cell level accuracy (empty vs digit and digit
 class), fully correct board reads, and correct solutions (after repair)."""
 import argparse
 import os
 import sys
+import time
 
 import numpy as np
 
@@ -19,6 +21,8 @@ from digit_model import DEFAULT_WEIGHTS, load_model  # noqa: E402
 from grid_detector import find_grid, read_board, rectify  # noqa: E402
 from synth import camera_shot, random_puzzle, render_board  # noqa: E402
 
+RESULTS_DIR = os.path.join(ROOT, "tests", "results")
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -27,6 +31,8 @@ def main():
     ap.add_argument("--font", default=None, choices=[None, "hershey", "ttf"])
     ap.add_argument("--save-examples", nargs="?", const=os.path.join(OUTPUT_DIR, "examples"),
                     default=None, help="save the first 6 solved photos (default output/examples)")
+    ap.add_argument("--save", nargs="?", const="accuracy.txt", default=None, metavar="NAME",
+                    help="also save the results in tests/results/ (default accuracy.txt)")
     ap.add_argument("--seed", type=int, default=123)
     args = ap.parse_args()
 
@@ -63,14 +69,23 @@ def main():
             out = draw_solution(img, Minv, puzzle, s) if s is not None else img
             write_image(os.path.join(args.save_examples, f"ex{i}_{'ok' if good else 'fail'}.jpg"), out)
 
-    print(f"grids found        {found}/{args.n}")
-    print(f"cell accuracy      {cell_ok / cells:.4f}")
-    print(f"  digit cells      {digit_ok / digit_cells:.4f}  ({digit_cells} cells)")
-    print(f"  empty cells      {empty_ok / empty_cells:.4f}  ({empty_cells} cells)")
-    print(f"boards read 100%   {boards_ok}/{found}")
-    print(f"correctly solved   {solved_ok}/{found}  (with low confidence repair)")
-    print("confusion (row = true, col = predicted, 0 = empty):")
-    print(confusion)
+    lines = [f"accuracy, {time.strftime('%Y-%m-%d %H:%M')}, {args.n} synthetic photos, "
+             f"seed {args.seed}, weights {os.path.basename(args.weights)}",
+             f"grids found        {found}/{args.n}",
+             f"cell accuracy      {cell_ok / cells:.4f}",
+             f"  digit cells      {digit_ok / digit_cells:.4f}  ({digit_cells} cells)",
+             f"  empty cells      {empty_ok / empty_cells:.4f}  ({empty_cells} cells)",
+             f"boards read 100%   {boards_ok}/{found}",
+             f"correctly solved   {solved_ok}/{found}  (with low confidence repair)",
+             "confusion (row = true, col = predicted, 0 = empty):",
+             str(confusion)]
+    print("\n".join(lines))
+    if args.save:
+        path = os.path.join(RESULTS_DIR, args.save)
+        os.makedirs(RESULTS_DIR, exist_ok=True)
+        with open(path, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        print("saved", path)
 
 
 if __name__ == "__main__":

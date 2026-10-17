@@ -5,6 +5,7 @@ output/
 __pycache__/
 *.pyc
 .venv/
+.ARenv/
 venv/
 
 # MNIST download (python download_mnist.py)
@@ -13,3 +14,6 @@ data/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Saved benchmark and accuracy results (--save)
+tests/results/
