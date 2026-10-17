@@ -145,6 +145,20 @@ included model solved 99/100. Grid corners are located to within 0.11 of a
 cell. Live video adds 6 frame voting on top of these single frame numbers.
 Processing runs at about 18 fps on a 2 core cloud CPU.
 
+Solver speed (`python tests/bench_solver.py`, pure Python, median of 20 runs,
+measured on a laptop CPU):
+
+| Puzzle | Clues | Solve | Solve + uniqueness check |
+|---|---|---|---|
+| Easy | 30 | 0.08 ms | 0.08 ms |
+| Medium | 36 | 0.04 ms | 0.05 ms |
+| Hard (17 clues) | 17 | 1.47 ms | 7.90 ms |
+| Inkala "world's hardest" | 21 | 20.6 ms | 36.2 ms |
+
+The solver is never the bottleneck: each distinct board is solved once and
+the solution is cached, so per frame time goes to grid detection and digit
+reading.
+
 The MNIST only model mostly misreads printed 1 as 2 and 6 as 8, which is why
 the printed digit mix in is used for the included weights.
 
