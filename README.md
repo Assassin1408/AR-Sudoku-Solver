@@ -135,14 +135,16 @@ lighting gradient, blur, noise, JPEG compression, clutter):
 | Metric (200 photos) | MNIST only | MNIST + printed |
 |---|---|---|
 | Grid found | 200/200 | 200/200 |
-| Cell accuracy | 98.83% | 99.67% |
-| Digit cells correct | 97.43% | 99.70% |
-| Boards read perfectly | 117/200 | 187/200 |
-| Correctly solved (with repair) | 148/200 | 193/200 |
+| Cell accuracy | 98.83% | 99.77% |
+| Digit cells correct | 97.43% | 99.98% |
+| Boards read perfectly | 117/200 | 196/200 |
+| Correctly solved (with repair) | 148/200 | 197/200 |
 
 On 100 photos printed in OpenCV Hershey fonts, never seen in training, the
-included model solved 99/100. Grid corners are located to within 0.11 of a
-cell. Live video adds 6 frame voting on top of these single frame numbers.
+included model solved 98/100. Grid corners are located to within 0.11 of a
+cell. Live video adds 10 frame voting and a solution lock (a solved board stays on
+screen through blur, brief grid loss and the odd misread) on top of these
+single frame numbers.
 Processing runs at about 18 fps on a 2 core cloud CPU.
 
 Solver speed (`python tests/bench_solver.py`, pure Python, median of 20 runs,
@@ -150,10 +152,10 @@ measured on a laptop CPU):
 
 | Puzzle | Clues | Solve | Solve + uniqueness check |
 |---|---|---|---|
-| Easy | 30 | 0.08 ms | 0.08 ms |
-| Medium | 36 | 0.04 ms | 0.05 ms |
-| Hard (17 clues) | 17 | 1.47 ms | 7.90 ms |
-| Inkala "world's hardest" | 21 | 20.6 ms | 36.2 ms |
+| Easy | 30 | 0.07 ms | 0.07 ms |
+| Medium | 36 | 0.04 ms | 0.04 ms |
+| Hard (17 clues) | 17 | 1.34 ms | 7.24 ms |
+| Inkala "world's hardest" | 21 | 20.8 ms | 37.0 ms |
 
 The solver is never the bottleneck: each distinct board is solved once and
 the solution is cached, so per frame time goes to grid detection and digit
